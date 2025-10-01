@@ -9,10 +9,30 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import AddMedicineDialog from "@/components/dialogs/AddMedicineDialog";
 import ImportExcelDialog from "@/components/dialogs/ImportExcelDialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
 import {
   Package,
   Search,
@@ -21,6 +41,8 @@ import {
   Edit,
   Trash2,
   Download,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 export default function Inventory() {
@@ -28,7 +50,10 @@ export default function Inventory() {
   const [filterType, setFilterType] = useState("all");
   const [inventory, setInventory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingMedicine, setEditingMedicine] = useState<any>(null);
+  const [deletingMedicine, setDeletingMedicine] = useState<any>(null);
   const { toast } = useToast();
+  const { isOnline, syncing, pendingCount, executeOperation } = useOfflineSync();
 
   const fetchInventory = async () => {
     try {
@@ -141,6 +166,61 @@ export default function Inventory() {
     URL.revokeObjectURL(url);
   };
 
+  const handleEditMedicine = async (updatedData: any) => {
+    try {
+      const { data, error } = await executeOperation('update', 'medicines', {
+        id: editingMedicine.id,
+        ...updatedData,
+      });
+
+      if (error) throw error;
+
+      setInventory(inventory.map(item => 
+        item.id === editingMedicine.id ? { ...item, ...updatedData } : item
+      ));
+
+      toast({
+        title: "Success",
+        description: "Medicine updated successfully!",
+      });
+      setEditingMedicine(null);
+    } catch (error) {
+      console.error("Error updating medicine:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update medicine",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteMedicine = async () => {
+    if (!deletingMedicine) return;
+
+    try {
+      const { error } = await executeOperation('delete', 'medicines', {
+        id: deletingMedicine.id,
+      });
+
+      if (error) throw error;
+
+      setInventory(inventory.filter(item => item.id !== deletingMedicine.id));
+
+      toast({
+        title: "Success",
+        description: "Medicine deleted successfully!",
+      });
+      setDeletingMedicine(null);
+    } catch (error) {
+      console.error("Error deleting medicine:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete medicine",
+        variant: "destructive",
+      });
+    }
+  };
+
   const isLowStock = (stock: number, minStock: number) => stock <= minStock;
   const isExpiringSoon = (expiryDate: string) => {
     if (!expiryDate) return false;
@@ -178,7 +258,23 @@ export default function Inventory() {
     <div className="p-6 space-y-6 bg-gradient-to-b from-gray-50 to-gray-100 min-h-screen">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Inventory Management</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold">Inventory Management</h1>
+            {isOnline ? (
+              <Badge variant="outline" className="text-green-600 border-green-600">
+                <Wifi className="h-3 w-3 mr-1" /> Online
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-orange-600 border-orange-600">
+                <WifiOff className="h-3 w-3 mr-1" /> Offline
+              </Badge>
+            )}
+            {pendingCount > 0 && (
+              <Badge variant="secondary">
+                {pendingCount} pending sync
+              </Badge>
+            )}
+          </div>
           <p className="text-muted-foreground">
             Manage your medicine stock and monitor levels
           </p>
@@ -401,13 +497,18 @@ export default function Inventory() {
                     </div>
 
                     <div className="flex gap-2 justify-end">
-                      <Button variant="outline" size="icon">
+                      <Button 
+                        variant="outline" 
+                        size="icon"
+                        onClick={() => setEditingMedicine(medicine)}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="outline"
                         size="icon"
                         className="text-red-600 hover:text-red-700"
+                        onClick={() => setDeletingMedicine(medicine)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -419,6 +520,129 @@ export default function Inventory() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingMedicine} onOpenChange={() => setEditingMedicine(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Medicine</DialogTitle>
+            <DialogDescription>Update medicine information</DialogDescription>
+          </DialogHeader>
+          {editingMedicine && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Name</Label>
+                  <Input
+                    defaultValue={editingMedicine.name}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, name: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label>Dosage</Label>
+                  <Input
+                    defaultValue={editingMedicine.dosage}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, dosage: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label>Brand</Label>
+                  <Input
+                    defaultValue={editingMedicine.brand}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, brand: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label>Batch Number</Label>
+                  <Input
+                    defaultValue={editingMedicine.batch_number}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, batch_number: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label>Stock Quantity</Label>
+                  <Input
+                    type="number"
+                    defaultValue={editingMedicine.stock_quantity}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, stock_quantity: parseInt(e.target.value)})}
+                  />
+                </div>
+                <div>
+                  <Label>Min Stock Level</Label>
+                  <Input
+                    type="number"
+                    defaultValue={editingMedicine.min_stock_level}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, min_stock_level: parseInt(e.target.value)})}
+                  />
+                </div>
+                <div>
+                  <Label>Buying Price</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    defaultValue={editingMedicine.buying_price}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, buying_price: parseFloat(e.target.value)})}
+                  />
+                </div>
+                <div>
+                  <Label>Selling Price</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    defaultValue={editingMedicine.selling_price}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, selling_price: parseFloat(e.target.value)})}
+                  />
+                </div>
+                <div>
+                  <Label>Expiry Date</Label>
+                  <Input
+                    type="date"
+                    defaultValue={editingMedicine.expiry_date}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, expiry_date: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label>Supplier</Label>
+                  <Input
+                    defaultValue={editingMedicine.supplier}
+                    onChange={(e) => setEditingMedicine({...editingMedicine, supplier: e.target.value})}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingMedicine(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => handleEditMedicine(editingMedicine)}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deletingMedicine} onOpenChange={() => setDeletingMedicine(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{deletingMedicine?.name}</strong> from your inventory.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteMedicine}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

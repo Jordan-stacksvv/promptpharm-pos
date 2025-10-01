@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import ReceiptDialog from "@/components/dialogs/ReceiptDialog";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/hooks/useAuth";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
@@ -31,6 +32,8 @@ import {
   Stethoscope,
   Camera,
   Usb,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 interface Medicine {
@@ -63,6 +66,7 @@ export default function Sales() {
   const [scanning, setScanning] = useState(false);
   const [showScannerOptions, setShowScannerOptions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { isOnline, syncing, pendingCount, executeOperation } = useOfflineSync();
 
   useEffect(() => {
     fetchMedicines();
@@ -92,8 +96,8 @@ export default function Sales() {
     // Listen for barcode scanner input (USB scanners act like keyboards)
     const handleKeyPress = (e: KeyboardEvent) => {
       // Barcode scanners typically send data quickly and end with Enter
-      if (e.key === 'Enter') {
-        const barcode = e.target?.value || '';
+      if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+        const barcode = e.target.value || '';
         if (barcode.length > 3) { // Basic barcode length check
           handleBarcodeScan(barcode);
         }
@@ -103,12 +107,12 @@ export default function Sales() {
     // Add event listener to search input
     const searchInput = document.querySelector('input[placeholder*="barcode"]');
     if (searchInput) {
-      searchInput.addEventListener('keypress', handleKeyPress);
+      searchInput.addEventListener('keypress', handleKeyPress as EventListener);
     }
 
     return () => {
       if (searchInput) {
-        searchInput.removeEventListener('keypress', handleKeyPress);
+        searchInput.removeEventListener('keypress', handleKeyPress as EventListener);
       }
     };
   };
@@ -213,26 +217,34 @@ export default function Sales() {
     setSaving(true);
     try {
       const receiptNumber = `RC-${Date.now()}`;
+      const saleId = `${Date.now()}-${Math.random()}`;
 
-      const { data: saleData, error: saleError } = await supabase
-        .from("sales")
-        .insert({
-          receipt_number: receiptNumber,
-          cashier_id: user.id,
-          payment_method: paymentMethod.toLowerCase(),
-          total_amount: total,
-          tax_amount: tax,
-          discount_amount: 0,
-          status: "completed",
-          condition_noted: conditionInput || null,
-        })
-        .select()
-        .single();
+      // Create sale record
+      const saleData = {
+        id: saleId,
+        receipt_number: receiptNumber,
+        cashier_id: user.id,
+        payment_method: paymentMethod.toLowerCase(),
+        total_amount: total,
+        tax_amount: tax,
+        discount_amount: 0,
+        status: "completed",
+        condition_noted: conditionInput || null,
+        sale_date: new Date().toISOString(),
+      };
+
+      const { data: insertedSale, error: saleError } = await executeOperation(
+        'insert',
+        'sales',
+        saleData
+      );
 
       if (saleError) throw saleError;
 
+      // Create sale items
       const saleItems = cart.map((item) => ({
-        sale_id: saleData.id,
+        id: `${Date.now()}-${item.id}-${Math.random()}`,
+        sale_id: saleId,
         medicine_id: item.id,
         quantity: item.quantity,
         unit_price: item.selling_price,
@@ -241,26 +253,21 @@ export default function Sales() {
         verified_via_barcode: true,
       }));
 
-      const { error: itemsError } = await supabase
-        .from("sale_items")
-        .insert(saleItems);
+      for (const saleItem of saleItems) {
+        await executeOperation('insert', 'sale_items', saleItem);
+      }
 
-      if (itemsError) throw itemsError;
-
+      // Update stock quantities
       for (const item of cart) {
-        const { error: stockError } = await supabase
-          .from("medicines")
-          .update({
-            stock_quantity: item.stock_quantity - item.quantity,
-          })
-          .eq("id", item.id);
-
-        if (stockError) throw stockError;
+        await executeOperation('update', 'medicines', {
+          id: item.id,
+          stock_quantity: item.stock_quantity - item.quantity,
+        });
       }
 
       setSelectedPaymentMethod(paymentMethod);
       setShowReceipt(true);
-      toast.success("Sale completed successfully! ✅");
+      toast.success(isOnline ? "Sale completed successfully! ✅" : "Sale saved offline. Will sync when online.");
     } catch (error) {
       console.error("Error completing sale:", error);
       toast.error("Failed to complete sale");
@@ -296,8 +303,26 @@ export default function Sales() {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Sales Point</h1>
-            <p className="text-sm text-gray-600">Process customer transactions</p>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">Sales Point</h1>
+              {isOnline ? (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  <Wifi className="h-3 w-3 mr-1" /> Online
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-orange-600 border-orange-600">
+                  <WifiOff className="h-3 w-3 mr-1" /> Offline Mode
+                </Badge>
+              )}
+              {pendingCount > 0 && (
+                <Badge variant="secondary">
+                  {pendingCount} pending sync
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-gray-600">
+              Process customer transactions {!isOnline && "- Changes will sync when online"}
+            </p>
           </div>
           <Button
             variant="outline"
@@ -626,7 +651,6 @@ export default function Sales() {
         total={total}
         paymentMethod={selectedPaymentMethod}
         onNewSale={handleNewSale}
-        conditionNoted={conditionInput}
       />
     </div>
   );

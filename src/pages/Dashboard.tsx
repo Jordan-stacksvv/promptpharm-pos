@@ -216,11 +216,7 @@ export default function Dashboard() {
               onClick={() => window.location.href = '/purchases'}>
               <Package className="h-6 w-6" /> Add Stock
             </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2"
-              onClick={() => window.location.href = '/customers'}>
-              <Users className="h-6 w-6" /> Customer
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2"
+            <Button variant="outline" className="h-20 flex-col gap-2 col-span-2"
               onClick={() => window.location.href = '/reports'}>
               <Calendar className="h-6 w-6" /> Reports
             </Button>
