@@ -17,6 +17,7 @@ import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import SaleComplete from "./pages/SaleComplete";
 import PurchaseComplete from "./pages/PurchaseComplete";
+import PhoneScanner from "./pages/PhoneScanner";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,7 +31,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route 
+            <Route path="/scan" element={<PhoneScanner />} />
+            <Route
               path="/*" 
               element={
                 <ProtectedRoute>

@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -33,7 +32,8 @@ import {
   Camera,
   Usb
 } from "lucide-react";
-import { QRCodeSVG as QRCode } from "qrcode.react";
+import { usePhoneScanner } from "@/hooks/usePhoneScanner";
+import { ScannerModal } from "@/components/ScannerModal";
 
 interface Medicine {
   id: string;
@@ -59,12 +59,16 @@ export default function Sales() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [conditionInput, setConditionInput] = useState("");
-  const [scannerSession, setScannerSession] = useState<string | null>(null);
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [showScannerOptions, setShowScannerOptions] = useState(false);
-  const [lastScannedItem, setLastScannedItem] = useState<string>("");
   const [currentVerifyingItem, setCurrentVerifyingItem] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Phone scanner hook
+  const { session, lastScanned, generateSession, disconnect } = usePhoneScanner({
+    onScan: handleBarcodeScan,
+    context: 'sales'
+  });
 
   // Fetch medicines
   const fetchMedicines = async () => {
@@ -89,14 +93,6 @@ export default function Sales() {
     fetchMedicines();
     setupBarcodeScanner();
   }, []);
-
-  // Generate scanner session
-  const generateScannerSession = () => {
-    const sessionId = `sales_scan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    setScannerSession(sessionId);
-    setShowScannerModal(true);
-    return sessionId;
-  };
 
   // Setup USB barcode scanner listener
   const setupBarcodeScanner = () => {
@@ -123,9 +119,7 @@ export default function Sales() {
     };
   };
 
-  const handleBarcodeScan = (barcode: string) => {
-    setLastScannedItem(barcode);
-    
+  function handleBarcodeScan(barcode: string) {
     // First try exact barcode match
     let medicine = medicines.find(med => med.barcode === barcode);
     
@@ -147,7 +141,7 @@ export default function Sales() {
     } else {
       toast.error(`❌ No medicine found for: ${barcode}`);
     }
-  };
+  }
 
   const handleCameraScan = () => {
     setShowScannerOptions(false);
@@ -229,7 +223,7 @@ export default function Sales() {
   const clearCart = () => {
     setCart([]);
     setConditionInput("");
-    setLastScannedItem("");
+    disconnect();
     toast.info("Cart cleared");
   };
 
@@ -268,25 +262,22 @@ export default function Sales() {
     setSaving(true);
 
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
 
       const receiptNumber = `RCP-${Date.now().toString().slice(-6)}`;
-      const subtotalAmount = cart.reduce((total, item) => total + item.selling_price * item.quantity, 0);
-      const taxAmount = subtotalAmount * 0.1;
-      const totalAmount = subtotalAmount + taxAmount;
+      const totalAmount = cart.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
 
       // Create sale record
-      const { data: saleData, error: saleError } = await supabase
+      const { data: sale, error: saleError } = await supabase
         .from("sales")
         .insert({
           receipt_number: receiptNumber,
+          cashier_id: user.id,
           total_amount: totalAmount,
-          tax_amount: taxAmount,
           payment_method: paymentMethod.toLowerCase(),
-          cashier_id: userData.user.id,
           condition_noted: conditionInput || null,
-          status: "completed",
+          status: "completed"
         })
         .select()
         .single();
@@ -299,12 +290,12 @@ export default function Sales() {
         const { error: itemError } = await supabase
           .from("sale_items")
           .insert({
-            sale_id: saleData.id,
+            sale_id: sale.id,
             medicine_id: item.id,
             quantity: item.quantity,
             unit_price: item.selling_price,
             total_price: item.selling_price * item.quantity,
-            verified_via_barcode: item.verified,
+            verified_via_barcode: item.verified
           });
 
         if (itemError) throw itemError;
@@ -313,7 +304,7 @@ export default function Sales() {
         const { error: stockError } = await supabase
           .from("medicines")
           .update({
-            stock_quantity: item.stock_quantity - item.quantity,
+            stock_quantity: item.stock_quantity - item.quantity
           })
           .eq("id", item.id);
 
@@ -322,14 +313,13 @@ export default function Sales() {
 
       toast.success(`🎉 ${paymentMethod} payment processed successfully! Receipt: ${receiptNumber}`);
       
-      // Clear cart and refresh
+      // Clear cart after successful sale
       setTimeout(() => {
         setCart([]);
         setConditionInput("");
-        setScannerSession(null);
-        setLastScannedItem("");
-        fetchMedicines();
-      }, 1000);
+        disconnect();
+        fetchMedicines(); // Refresh stock
+      }, 2000);
 
     } catch (error: any) {
       console.error("Error completing sale:", error);
@@ -337,13 +327,6 @@ export default function Sales() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleNewSale = () => {
-    setCart([]);
-    setConditionInput("");
-    setLastScannedItem("");
-    setScannerSession(null);
   };
 
   const subtotal = cart.reduce(
@@ -384,7 +367,10 @@ export default function Sales() {
             </Button>
             <Button
               variant="outline"
-              onClick={generateScannerSession}
+              onClick={() => {
+                generateSession();
+                setShowScannerModal(true);
+              }}
               className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
             >
               <QrCode className="mr-2 h-4 w-4" />
@@ -412,13 +398,13 @@ export default function Sales() {
         </Card>
 
         {/* Last Scanned Display */}
-        {lastScannedItem && (
+        {lastScanned && (
           <Card className="mb-4 border-green-200 bg-green-50">
             <CardContent className="p-3">
               <div className="flex items-center gap-2 text-green-700">
                 <CheckCircle className="h-4 w-4" />
                 <span className="text-sm font-medium">Last Scanned:</span>
-                <code className="text-xs bg-green-100 px-2 py-1 rounded">{lastScannedItem}</code>
+                <code className="text-xs bg-green-100 px-2 py-1 rounded">{lastScanned}</code>
               </div>
             </CardContent>
           </Card>
@@ -426,59 +412,14 @@ export default function Sales() {
       </div>
 
       {/* Phone Scanner Modal */}
-      <Dialog open={showScannerModal} onOpenChange={setShowScannerModal}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5" />
-              Phone Barcode Scanner
-            </DialogTitle>
-            <DialogDescription>
-              Scan this QR code with your phone to use it as a barcode scanner
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="flex flex-col items-center space-y-4">
-            <div className="p-4 bg-white rounded-lg border-2 border-green-200">
-              <QRCode 
-                value={`${window.location.origin}/scan-sales?session=${scannerSession}`}
-                size={200}
-                level="M"
-                includeMargin
-              />
-            </div>
-            
-            <div className="text-center space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Open your phone camera and scan the QR code
-              </p>
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const link = `${window.location.origin}/scan-sales?session=${scannerSession}`;
-                    navigator.clipboard.writeText(link);
-                    toast.success("Scanner link copied to clipboard!");
-                  }}
-                >
-                  Copy Link
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    setShowScannerModal(false);
-                    toast.info("Phone scanner session started");
-                  }}
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ScannerModal
+        open={showScannerModal}
+        onOpenChange={setShowScannerModal}
+        sessionId={session?.sessionId || null}
+        context="sales"
+        isConnected={session?.isConnected || false}
+        status={session?.status || 'disconnected'}
+      />
 
       {/* Scanner Options Modal */}
       {showScannerOptions && (
@@ -570,7 +511,10 @@ export default function Sales() {
                   type="text"
                 />
                 <Button 
-                  onClick={generateScannerSession}
+                  onClick={() => {
+                    generateSession();
+                    setShowScannerModal(true);
+                  }}
                   variant="outline"
                   className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
                 >
