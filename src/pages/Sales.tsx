@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -64,6 +64,52 @@ export default function Sales() {
   const [currentVerifyingItem, setCurrentVerifyingItem] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Barcode scan handler - defined early for hook with useCallback
+  const handleBarcodeScan = useCallback((barcode: string) => {
+    // First try exact barcode match
+    let medicine = medicines.find(med => med.barcode === barcode);
+    
+    // If no exact barcode match, try ID match
+    if (!medicine) {
+      medicine = medicines.find(med => med.id === barcode);
+    }
+    
+    // If still no match, try name contains (case insensitive)
+    if (!medicine) {
+      medicine = medicines.find(med => 
+        med.name.toLowerCase().includes(barcode.toLowerCase())
+      );
+    }
+    
+    if (medicine) {
+      // Check if already in cart
+      const existingItem = cart.find((item) => item.id === medicine.id);
+      
+      if (existingItem) {
+        // Check stock before increasing quantity
+        if (existingItem.quantity + 1 > medicine.stock_quantity) {
+          toast.error(`Only ${medicine.stock_quantity} items available in stock`);
+          return;
+        }
+        setCart(cart.map(item => 
+          item.id === medicine.id 
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        ));
+      } else {
+        // Check stock before adding new item
+        if (medicine.stock_quantity === 0) {
+          toast.error("This item is out of stock");
+          return;
+        }
+        setCart([...cart, { ...medicine, quantity: 1, verified: false }]);
+      }
+      toast.success(`✅ Scanned: ${medicine.name}`);
+    } else {
+      toast.error(`❌ No medicine found for: ${barcode}`);
+    }
+  }, [medicines, cart]);
+
   // Phone scanner hook
   const { session, lastScanned, generateSession, disconnect } = usePhoneScanner({
     onScan: handleBarcodeScan,
@@ -119,29 +165,6 @@ export default function Sales() {
     };
   };
 
-  function handleBarcodeScan(barcode: string) {
-    // First try exact barcode match
-    let medicine = medicines.find(med => med.barcode === barcode);
-    
-    // If no exact barcode match, try ID match
-    if (!medicine) {
-      medicine = medicines.find(med => med.id === barcode);
-    }
-    
-    // If still no match, try name contains (case insensitive)
-    if (!medicine) {
-      medicine = medicines.find(med => 
-        med.name.toLowerCase().includes(barcode.toLowerCase())
-      );
-    }
-    
-    if (medicine) {
-      addToCart(medicine);
-      toast.success(`✅ Scanned: ${medicine.name}`);
-    } else {
-      toast.error(`❌ No medicine found for: ${barcode}`);
-    }
-  }
 
   const handleCameraScan = () => {
     setShowScannerOptions(false);
