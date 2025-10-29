@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [lowStock, setLowStock] = useState<any[]>([])
   const [expiringSoon, setExpiringSoon] = useState<any[]>([])
   const [topSelling, setTopSelling] = useState<any[]>([])
+  const [recentScans, setRecentScans] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchDashboardData = async () => {
@@ -104,12 +105,44 @@ export default function Dashboard() {
   useEffect(() => {
     fetchDashboardData()
 
+    // Setup realtime subscription for scan logs
+    const channel = supabase
+      .channel('scan-logs-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'scan_logs'
+        },
+        (payload) => {
+          setRecentScans(prev => [payload.new, ...prev].slice(0, 10))
+        }
+      )
+      .subscribe()
+
+    // Fetch recent scans
+    const fetchRecentScans = async () => {
+      const { data } = await supabase
+        .from('scan_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10)
+      
+      if (data) setRecentScans(data)
+    }
+    
+    fetchRecentScans()
+
     // Optional: Auto-refresh every 30s
     const interval = setInterval(() => {
       fetchDashboardData()
     }, 30000)
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   return (
@@ -258,33 +291,67 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Top Selling Medicines Today */}
-      <Card className="shadow-card">
-        <CardHeader>
-          <CardTitle>Top Selling Medicines Today</CardTitle>
-          <CardDescription>Most frequently purchased items</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? <div>Loading...</div> :
-            topSelling.length === 0 ? <p className="text-sm text-muted-foreground">No sales today</p> :
-            <div className="space-y-4">
-              {topSelling.map((medicine, idx) => (
-                <div key={idx} className="flex items-center justify-between py-2 border-b border-muted/50 last:border-0">
-                  <div>
-                    <p className="font-medium">{medicine.name}</p>
-                    <p className="text-sm text-muted-foreground">{medicine.quantity} units sold</p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top Selling Medicines Today */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle>Top Selling Medicines Today</CardTitle>
+            <CardDescription>Most frequently purchased items</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? <div>Loading...</div> :
+              topSelling.length === 0 ? <p className="text-sm text-muted-foreground">No sales today</p> :
+              <div className="space-y-4">
+                {topSelling.map((medicine, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-2 border-b border-muted/50 last:border-0">
+                    <div>
+                      <p className="font-medium">{medicine.name}</p>
+                      <p className="text-sm text-muted-foreground">{medicine.quantity} units sold</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-primary">{formatCurrency(medicine.totalRevenue)}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-medium text-primary">{formatCurrency(medicine.totalRevenue)}</p>
-                    {/* Alternative using ₵ symbol: */}
-                    {/* <p className="font-medium text-primary">{formatCedi(medicine.totalRevenue)}</p> */}
+                ))}
+              </div>
+            }
+          </CardContent>
+        </Card>
+
+        {/* Recent Scans */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              Recent Scans
+            </CardTitle>
+            <CardDescription>Real-time barcode scanning activity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentScans.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No scans recorded yet</p>
+            ) : (
+              <div className="space-y-3">
+                {recentScans.map((scan, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-2 border-b border-muted/50 last:border-0">
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{scan.medicine_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {scan.context === 'sales' ? '🛒 Sales' : '📦 Inventory'} • 
+                        Qty: {scan.quantity} • 
+                        {new Date(scan.scanned_at).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(scan.scanned_at).toLocaleDateString()}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          }
-        </CardContent>
-      </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

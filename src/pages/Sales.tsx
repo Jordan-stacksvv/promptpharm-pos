@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { usePhoneScanner } from "@/hooks/usePhoneScanner";
 import { ScannerModal } from "@/components/ScannerModal";
+import { BarcodeScanner } from "@/components/dialogs/BarcodeScanner";
 
 interface Medicine {
   id: string;
@@ -119,7 +120,7 @@ export default function Sales() {
     };
   };
 
-  function handleBarcodeScan(barcode: string) {
+  async function handleBarcodeScan(barcode: string) {
     // First try exact barcode match
     let medicine = medicines.find(med => med.barcode === barcode);
     
@@ -136,22 +137,60 @@ export default function Sales() {
     }
     
     if (medicine) {
-      addToCart(medicine);
-      toast.success(`✅ Scanned: ${medicine.name}`);
+      // Add to cart with verified status
+      const existingItem = cart.find((item) => item.id === medicine.id);
+      
+      if (existingItem) {
+        if (existingItem.quantity + 1 > medicine.stock_quantity) {
+          toast.error(`Only ${medicine.stock_quantity} items available in stock`);
+          return;
+        }
+        setCart(cart.map((item) =>
+          item.id === medicine.id
+            ? { ...item, quantity: item.quantity + 1, verified: true }
+            : item
+        ));
+      } else {
+        if (medicine.stock_quantity === 0) {
+          toast.error("This item is out of stock");
+          return;
+        }
+        setCart([...cart, { ...medicine, quantity: 1, verified: true }]);
+      }
+      
+      // Log scan to database
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from("scan_logs").insert({
+            barcode: barcode,
+            medicine_id: medicine.id,
+            medicine_name: medicine.name,
+            quantity: 1,
+            context: 'sales',
+            scanned_by: user.id
+          });
+        }
+      } catch (error) {
+        console.error("Error logging scan:", error);
+      }
+      
+      toast.success(`✅ Scanned and verified — ready for sale: ${medicine.name}`);
     } else {
       toast.error(`❌ No medicine found for: ${barcode}`);
     }
   }
 
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+
   const handleCameraScan = () => {
     setShowScannerOptions(false);
-    toast.info("Camera scanner would open here. In production, use a library like html5-qrcode.");
-    // Simulate camera scan after delay
-    setTimeout(() => {
-      const sampleBarcodes = ["MED001234567", "MED002345678", "MED003456789"];
-      const randomBarcode = sampleBarcodes[Math.floor(Math.random() * sampleBarcodes.length)];
-      handleBarcodeScan(randomBarcode);
-    }, 2000);
+    setShowCameraScanner(true);
+  };
+
+  const handleCameraScanComplete = (barcode: string) => {
+    setShowCameraScanner(false);
+    handleBarcodeScan(barcode);
   };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -420,6 +459,13 @@ export default function Sales() {
         isConnected={session?.isConnected || false}
         status={session?.status || 'disconnected'}
       />
+
+      {/* Camera Scanner Dialog */}
+      {showCameraScanner && (
+        <div className="fixed inset-0 z-50">
+          <BarcodeScanner onBarcodeScanned={handleCameraScanComplete} />
+        </div>
+      )}
 
       {/* Scanner Options Modal */}
       {showScannerOptions && (

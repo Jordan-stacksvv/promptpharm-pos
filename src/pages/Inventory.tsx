@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -43,7 +43,11 @@ import {
   Download,
   Wifi,
   WifiOff,
+  Scan,
+  QrCode
 } from "lucide-react";
+import { BarcodeScanner } from "@/components/dialogs/BarcodeScanner";
+import { useScannerIntegration } from "@/hooks/useScannerIntegration";
 
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -52,8 +56,23 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [editingMedicine, setEditingMedicine] = useState<any>(null);
   const [deletingMedicine, setDeletingMedicine] = useState<any>(null);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const { toast } = useToast();
   const { isOnline, syncing, pendingCount, executeOperation } = useOfflineSync();
+
+  const handleInventoryScan = useCallback(async (medicine: any, barcode: string) => {
+    // Update stock quantity when scanning for inventory
+    toast({
+      title: "Scanned for Inventory",
+      description: `${medicine.name} - Current stock: ${medicine.stock_quantity}`,
+    });
+  }, [toast]);
+
+  const { lastScanned, scanning, handleScan } = useScannerIntegration({
+    medicines: inventory,
+    context: 'inventory',
+    onScanSuccess: handleInventoryScan
+  });
 
   const fetchInventory = async () => {
     try {
@@ -256,6 +275,31 @@ export default function Inventory() {
 
   return (
     <div className="p-6 space-y-6 bg-gradient-to-b from-gray-50 to-gray-100 min-h-screen">
+      {/* Barcode Scanner Modal */}
+      {showBarcodeScanner && (
+        <div className="fixed inset-0 z-50">
+          <BarcodeScanner 
+            onBarcodeScanned={(barcode) => {
+              setShowBarcodeScanner(false);
+              handleScan(barcode);
+            }} 
+          />
+        </div>
+      )}
+
+      {/* Last Scanned Display */}
+      {lastScanned && (
+        <div className="fixed top-4 right-4 z-40 bg-green-100 border-2 border-green-500 rounded-lg p-3 shadow-lg">
+          <div className="flex items-center gap-2 text-green-700">
+            <QrCode className="h-5 w-5" />
+            <div>
+              <p className="text-xs font-medium">Last Scanned</p>
+              <code className="text-sm bg-green-200 px-2 py-1 rounded">{lastScanned}</code>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
@@ -280,6 +324,14 @@ export default function Inventory() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => setShowBarcodeScanner(true)}
+            className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+          >
+            <Scan className="h-4 w-4 mr-2" />
+            Scan Barcode
+          </Button>
           <Button variant="outline" onClick={downloadTemplate}>
             <Download className="h-4 w-4 mr-2" />
             Template

@@ -99,17 +99,15 @@ export function ExcelImportDialog({ onImportComplete }: ExcelImportDialogProps) 
     // Map common Excel column names to our database fields with input sanitization
     return {
       name: sanitizeInput(data.name || data.Name || data.medicine_name || data['Medicine Name'] || ''),
-      generic_name: sanitizeInput(data.generic_name || data['Generic Name'] || data.genericName || ''),
+      brand: sanitizeInput(data.brand || data.Brand || data.manufacturer || data.Manufacturer || ''),
       dosage: sanitizeInput(data.dosage || data.Dosage || data.strength || data.Strength || ''),
-      description: sanitizeInput(data.description || data.Description || ''),
-      manufacturer: sanitizeInput(data.manufacturer || data.Manufacturer || ''),
       category: validateCategory(data.category || data.Category || 'over_counter'),
       stock_quantity: Math.max(0, parseInt(data.stock_quantity || data['Stock Quantity'] || data.quantity || data.Quantity || '0') || 0),
       min_stock_level: Math.max(1, parseInt(data.min_stock_level || data['Min Stock'] || data.min_stock || '10') || 10),
-      unit_price: Math.max(0, parseFloat(data.unit_price || data['Unit Price'] || data.cost || data.Cost || '0') || 0),
+      buying_price: Math.max(0, parseFloat(data.buying_price || data['Buying Price'] || data.unit_price || data['Unit Price'] || data.cost || data.Cost || '0') || 0),
       selling_price: Math.max(0, parseFloat(data.selling_price || data['Selling Price'] || data.price || data.Price || '0') || 0),
       expiry_date: data.expiry_date || data['Expiry Date'] || data.expiry || null,
-      batch_number: sanitizeInput(data.batch_number || data['Batch Number'] || data.batch || ''),
+      batch_number: sanitizeInput(data.batch_number || data['Batch Number'] || data.batch || 'BATCH-' + Date.now()),
       barcode: sanitizeInput(data.barcode || data.Barcode || data.sku || data.SKU || '')
     };
   };
