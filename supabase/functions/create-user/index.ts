@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,19 +34,50 @@ serve(async (req) => {
       return new Response('Invalid token', { status: 401, headers: corsHeaders })
     }
 
-    // Check if user is admin
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
+    // Check if user is admin using user_roles table
+    const { data: userRoles } = await supabaseAdmin
+      .from('user_roles')
       .select('role')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
       .single()
 
-    if (profile?.role !== 'admin') {
+    if (!userRoles) {
       return new Response('Admin access required', { status: 403, headers: corsHeaders })
     }
 
-    // Get request data
-    const { fullName, username, email, phone, role, password } = await req.json()
+    // Define validation schema
+    const CreateUserSchema = z.object({
+      fullName: z.string().trim().min(2, 'Name must be at least 2 characters').max(100, 'Name too long'),
+      username: z.string().trim().min(3, 'Username must be at least 3 characters').max(50, 'Username too long')
+        .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscore and dash'),
+      email: z.string().trim().email('Invalid email address').max(255, 'Email too long'),
+      phone: z.string().trim().max(20, 'Phone number too long').optional(),
+      role: z.enum(['admin', 'manager', 'pharmacist', 'cashier'], {
+        errorMap: () => ({ message: 'Invalid role' })
+      }),
+      password: z.string().min(8, 'Password must be at least 8 characters').max(72, 'Password too long')
+        .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+        .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+        .regex(/[0-9]/, 'Password must contain at least one number')
+    })
+
+    // Get and validate request data
+    const body = await req.json()
+    const parsed = CreateUserSchema.safeParse(body)
+    
+    if (!parsed.success) {
+      const errors = parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`)
+      return new Response(JSON.stringify({ 
+        error: 'Validation failed', 
+        details: errors 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+    
+    const { fullName, username, email, phone, role, password } = parsed.data
 
     // Create user with admin powers (SECURE - using service role on server)
     const { data: newUser, error } = await supabaseAdmin.auth.admin.createUser({
@@ -62,21 +94,27 @@ serve(async (req) => {
       })
     }
 
-    // Create profile
+    // Create profile and role
     if (newUser.user) {
+      // Insert into profiles without role
       await supabaseAdmin.from('profiles').upsert({
         id: newUser.user.id,
         full_name: fullName,
         username,
         email,
         phone,
-        role: role.toLowerCase(),
         status: 'active',
         permissions: 
           role === 'admin' ? ['All Access'] : 
           role === 'pharmacist' ? ['Sales', 'Inventory', 'Customers', 'Reports', 'Returns', 'Purchases'] :
           role === 'cashier' ? ['Sales', 'Customers'] :
           ['Sales', 'Inventory', 'Customers', 'Reports', 'Returns', 'Users'] // manager
+      })
+
+      // Insert role into user_roles table
+      await supabaseAdmin.from('user_roles').insert({
+        user_id: newUser.user.id,
+        role: role.toLowerCase()
       })
     }
 
