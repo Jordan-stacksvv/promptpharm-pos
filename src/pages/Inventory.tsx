@@ -33,6 +33,7 @@ import ImportExcelDialog from "@/components/dialogs/ImportExcelDialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useNavigate } from "react-router-dom";
 import {
   Package,
   Search,
@@ -50,6 +51,7 @@ import { BarcodeScanner } from "@/components/dialogs/BarcodeScanner";
 import { useScannerIntegration } from "@/hooks/useScannerIntegration";
 
 export default function Inventory() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [inventory, setInventory] = useState<any[]>([]);

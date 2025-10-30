@@ -18,12 +18,20 @@ interface BarcodeScannerProps {
 }
 
 export function BarcodeScanner({ onBarcodeScanned }: BarcodeScannerProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true); // Auto-open
   const [scanning, setScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<string>("");
   const { toast } = useToast();
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
   const elementId = "barcode-scanner";
+  
+  // Auto-start scanning on mobile
+  useEffect(() => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile && !scanning) {
+      setTimeout(() => startScanning(), 500);
+    }
+  }, []);
 
   const sanitizeBarcode = (barcode: string): string => {
     // Remove any HTML tags and special characters, keep only alphanumeric and common barcode characters
@@ -79,6 +87,9 @@ export function BarcodeScanner({ onBarcodeScanned }: BarcodeScannerProps) {
           fps: 10,
           qrbox: { width: 250, height: 250 },
           aspectRatio: 1.0,
+          // Remove permission prompt on mobile
+          showTorchButtonIfSupported: true,
+          formatsToSupport: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
         },
         false
       );
@@ -87,8 +98,8 @@ export function BarcodeScanner({ onBarcodeScanned }: BarcodeScannerProps) {
     } catch (error) {
       console.error("Error starting scanner:", error);
       toast({
-        title: "Scanner Error",
-        description: "Failed to start barcode scanner. Please check camera permissions.",
+        title: "Camera Access",
+        description: "Please allow camera access to scan barcodes",
         variant: "destructive"
       });
       setScanning(false);

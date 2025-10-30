@@ -18,6 +18,7 @@ import Login from "./pages/Login";
 import SaleComplete from "./pages/SaleComplete";
 import PurchaseComplete from "./pages/PurchaseComplete";
 import PhoneScanner from "./pages/PhoneScanner";
+import InventoryScanPreview from "./pages/InventoryScanPreview";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/settings" element={<Settings />} />
             <Route path="/sale-complete" element={<SaleComplete />} />
             <Route path="/purchase-complete" element={<PurchaseComplete />} />
+            <Route path="/inventory-scan-preview" element={<InventoryScanPreview />} />
             <Route path="*" element={<NotFound />} />
                     </Routes>
                   </PharmacyLayout>

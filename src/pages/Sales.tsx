@@ -35,6 +35,7 @@ import {
 import { usePhoneScanner } from "@/hooks/usePhoneScanner";
 import { ScannerModal } from "@/components/ScannerModal";
 import { BarcodeScanner } from "@/components/dialogs/BarcodeScanner";
+import { CashPaymentDialog } from "@/components/dialogs/CashPaymentDialog";
 
 interface Medicine {
   id: string;
@@ -286,7 +287,10 @@ export default function Sales() {
     }
   };
 
-  const completeSale = async (paymentMethod: string) => {
+  const [showCashDialog, setShowCashDialog] = useState(false);
+  const [pendingPaymentMethod, setPendingPaymentMethod] = useState<string | null>(null);
+
+  const initiateSale = (paymentMethod: string) => {
     if (cart.length === 0) {
       toast.error("Cart is empty");
       return;
@@ -298,6 +302,15 @@ export default function Sales() {
       return;
     }
 
+    if (paymentMethod.toLowerCase() === 'cash') {
+      setPendingPaymentMethod(paymentMethod);
+      setShowCashDialog(true);
+    } else {
+      completeSale(paymentMethod);
+    }
+  };
+
+  const completeSale = async (paymentMethod: string) => {
     setSaving(true);
 
     try {
@@ -466,6 +479,14 @@ export default function Sales() {
           <BarcodeScanner onBarcodeScanned={handleCameraScanComplete} />
         </div>
       )}
+
+      {/* Cash Payment Dialog */}
+      <CashPaymentDialog
+        open={showCashDialog}
+        onOpenChange={setShowCashDialog}
+        totalAmount={total}
+        onConfirm={() => pendingPaymentMethod && completeSale(pendingPaymentMethod)}
+      />
 
       {/* Scanner Options Modal */}
       {showScannerOptions && (
@@ -780,7 +801,7 @@ export default function Sales() {
               </CardHeader>
               <CardContent className="space-y-3 pt-6">
                 <Button
-                  onClick={() => completeSale("Cash")}
+                  onClick={() => initiateSale("Cash")}
                   className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg"
                   disabled={saving || cart.some(item => !item.verified)}
                 >
@@ -792,7 +813,7 @@ export default function Sales() {
                   {saving ? "Processing..." : "Cash Payment"}
                 </Button>
                 <Button
-                  onClick={() => completeSale("Card")}
+                  onClick={() => initiateSale("Card")}
                   variant="outline"
                   className="w-full h-12 text-lg border-blue-300 text-blue-700 hover:bg-blue-50"
                   disabled={saving || cart.some(item => !item.verified)}
@@ -801,7 +822,7 @@ export default function Sales() {
                   Card Payment
                 </Button>
                 <Button
-                  onClick={() => completeSale("Mobile Money")}
+                  onClick={() => initiateSale("Mobile Money")}
                   variant="outline"
                   className="w-full h-12 text-lg border-purple-300 text-purple-700 hover:bg-purple-50"
                   disabled={saving || cart.some(item => !item.verified)}
