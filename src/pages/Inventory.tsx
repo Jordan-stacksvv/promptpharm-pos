@@ -30,10 +30,14 @@ import {
 import { Label } from "@/components/ui/label";
 import AddMedicineDialog from "@/components/dialogs/AddMedicineDialog";
 import ImportExcelDialog from "@/components/dialogs/ImportExcelDialog";
+import { BarcodeGeneratorDialog } from "@/components/dialogs/BarcodeGeneratorDialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useNavigate } from "react-router-dom";
+import { usePhoneScanner } from "@/hooks/usePhoneScanner";
+import { useUsbScanner } from "@/hooks/useUsbScanner";
+import { ScannerModal } from "@/components/ScannerModal";
 import {
   Package,
   Search,
@@ -45,7 +49,9 @@ import {
   Wifi,
   WifiOff,
   Scan,
-  QrCode
+  QrCode,
+  Usb,
+  Smartphone
 } from "lucide-react";
 import { BarcodeScanner } from "@/components/dialogs/BarcodeScanner";
 import { useScannerIntegration } from "@/hooks/useScannerIntegration";
@@ -59,8 +65,62 @@ export default function Inventory() {
   const [editingMedicine, setEditingMedicine] = useState<any>(null);
   const [deletingMedicine, setDeletingMedicine] = useState<any>(null);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [showPhoneScannerModal, setShowPhoneScannerModal] = useState(false);
+  const [selectedMedicineForBarcode, setSelectedMedicineForBarcode] = useState<any>(null);
   const { toast } = useToast();
   const { isOnline, syncing, pendingCount, executeOperation } = useOfflineSync();
+
+  // Phone scanner hook for inventory
+  const { session, generateSession, disconnect } = usePhoneScanner({
+    onScan: async (barcode: string) => {
+      // Find medicine and add to pending list
+      const medicine = inventory.find(m => m.barcode === barcode || m.id === barcode);
+      if (medicine) {
+        // Add to session storage for approval page
+        const existing = JSON.parse(sessionStorage.getItem("pendingInventoryScans") || "[]");
+        existing.push({
+          barcode,
+          medicine,
+          quantity: 1,
+          unitCost: medicine.buying_price || 0,
+          sellingPrice: medicine.selling_price || 0,
+          found: true
+        });
+        sessionStorage.setItem("pendingInventoryScans", JSON.stringify(existing));
+        toast({
+          title: "Item Scanned",
+          description: `${medicine.name} added to pending inventory`
+        });
+      } else {
+        const existing = JSON.parse(sessionStorage.getItem("pendingInventoryScans") || "[]");
+        existing.push({
+          barcode,
+          quantity: 1,
+          unitCost: 0,
+          sellingPrice: 0,
+          found: false
+        });
+        sessionStorage.setItem("pendingInventoryScans", JSON.stringify(existing));
+        toast({
+          title: "Unknown Item",
+          description: "Item not found - add details on approval page",
+          variant: "destructive"
+        });
+      }
+    },
+    context: 'inventory'
+  });
+
+  // USB scanner hook
+  const { isUsbConnected } = useUsbScanner(async (barcode: string) => {
+    const medicine = inventory.find(m => m.barcode === barcode || m.id === barcode);
+    if (medicine) {
+      toast({
+        title: "Scanned",
+        description: `${medicine.name} - Stock: ${medicine.stock_quantity}`,
+      });
+    }
+  });
 
   const handleInventoryScan = useCallback(async (medicine: any, barcode: string) => {
     // Update stock quantity when scanning for inventory
@@ -289,6 +349,26 @@ export default function Inventory() {
         </div>
       )}
 
+      {/* Phone Scanner Modal */}
+      <ScannerModal
+        open={showPhoneScannerModal}
+        onOpenChange={(open) => {
+          setShowPhoneScannerModal(open);
+          if (!open) {
+            // Navigate to approval page if items were scanned
+            const scanned = sessionStorage.getItem("pendingInventoryScans");
+            if (scanned && JSON.parse(scanned).length > 0) {
+              navigate("/inventory/scan-approval");
+            }
+            disconnect();
+          }
+        }}
+        sessionId={session?.sessionId || null}
+        context="inventory"
+        isConnected={session?.isConnected || false}
+        status={session?.status || 'disconnected'}
+      />
+
       {/* Last Scanned Display */}
       {lastScanned && (
         <div className="fixed top-4 right-4 z-40 bg-green-100 border-2 border-green-500 rounded-lg p-3 shadow-lg">
@@ -325,20 +405,50 @@ export default function Inventory() {
             Manage your medicine stock and monitor levels
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* USB Scanner Button */}
+          <Button
+            variant="outline"
+            disabled={!isUsbConnected}
+            className={isUsbConnected ? "bg-blue-50 border-blue-200 text-blue-700" : "opacity-50"}
+          >
+            <Usb className="h-4 w-4 mr-2" />
+            {isUsbConnected ? "USB Ready" : "No USB"}
+          </Button>
+
+          {/* Phone Scanner Button */}
+          <Button
+            variant="outline"
+            onClick={() => {
+              // Clear previous scans
+              sessionStorage.removeItem("pendingInventoryScans");
+              generateSession();
+              setShowPhoneScannerModal(true);
+            }}
+            className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+          >
+            <Smartphone className="h-4 w-4 mr-2" />
+            Phone Scanner
+          </Button>
+
+          {/* Camera Scanner Button */}
           <Button 
             variant="outline" 
             onClick={() => setShowBarcodeScanner(true)}
-            className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+            className="bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
           >
             <Scan className="h-4 w-4 mr-2" />
-            Scan Barcode
+            Camera Scan
           </Button>
+
+          {/* Excel Import */}
           <Button variant="outline" onClick={downloadTemplate}>
             <Download className="h-4 w-4 mr-2" />
             Template
           </Button>
           <ImportExcelDialog onImportComplete={fetchInventory} />
+
+          {/* Manual Add */}
           <AddMedicineDialog onAddMedicine={handleAddMedicine} />
         </div>
       </div>
@@ -551,6 +661,29 @@ export default function Inventory() {
                     </div>
 
                     <div className="flex gap-2 justify-end">
+                      <BarcodeGeneratorDialog
+                        medicineId={medicine.id}
+                        medicineName={medicine.name}
+                        onBarcodeGenerated={async (barcode) => {
+                          try {
+                            await supabase
+                              .from("medicines")
+                              .update({ barcode })
+                              .eq("id", medicine.id);
+                            toast({
+                              title: "Success",
+                              description: "Barcode assigned to medicine"
+                            });
+                            fetchInventory();
+                          } catch (error) {
+                            toast({
+                              title: "Error",
+                              description: "Failed to assign barcode",
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      />
                       <Button 
                         variant="outline" 
                         size="icon"

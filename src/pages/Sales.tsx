@@ -33,6 +33,7 @@ import {
   Usb
 } from "lucide-react";
 import { usePhoneScanner } from "@/hooks/usePhoneScanner";
+import { useUsbScanner } from "@/hooks/useUsbScanner";
 import { ScannerModal } from "@/components/ScannerModal";
 import { BarcodeScanner } from "@/components/dialogs/BarcodeScanner";
 import { CashPaymentDialog } from "@/components/dialogs/CashPaymentDialog";
@@ -71,6 +72,9 @@ export default function Sales() {
     onScan: handleBarcodeScan,
     context: 'sales'
   });
+
+  // USB scanner hook
+  const { isUsbConnected, lastScan: usbLastScan } = useUsbScanner(handleBarcodeScan);
 
   // Fetch medicines
   const fetchMedicines = async () => {
@@ -409,13 +413,14 @@ export default function Sales() {
             <p className="text-sm text-gray-600">Process customer transactions</p>
           </div>
           <div className="flex gap-2">
+            {/* USB Scanner Button */}
             <Button
               variant="outline"
-              onClick={clearCart}
-              disabled={cart.length === 0}
+              disabled={!isUsbConnected}
+              className={isUsbConnected ? "bg-blue-50 border-blue-200 text-blue-700" : "opacity-50"}
             >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Clear Cart
+              <Usb className="mr-2 h-4 w-4" />
+              {isUsbConnected ? "USB Ready" : "No USB Scanner"}
             </Button>
             <Button
               variant="outline"
@@ -427,6 +432,14 @@ export default function Sales() {
             >
               <QrCode className="mr-2 h-4 w-4" />
               Phone Scanner
+            </Button>
+            <Button
+              variant="outline"
+              onClick={clearCart}
+              disabled={cart.length === 0}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Clear Cart
             </Button>
           </div>
         </div>

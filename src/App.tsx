@@ -19,6 +19,7 @@ import SaleComplete from "./pages/SaleComplete";
 import PurchaseComplete from "./pages/PurchaseComplete";
 import PhoneScanner from "./pages/PhoneScanner";
 import InventoryScanPreview from "./pages/InventoryScanPreview";
+import InventoryScanApproval from "./pages/InventoryScanApproval";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,7 @@ const App = () => (
                       <Route path="/" element={<Dashboard />} />
             <Route path="/sales" element={<Sales />} />
             <Route path="/inventory" element={<Inventory />} />
+            <Route path="/inventory/scan-approval" element={<InventoryScanApproval />} />
             <Route path="/purchases" element={<Purchases />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/returns" element={<Returns />} />
