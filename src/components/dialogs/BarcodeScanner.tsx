@@ -81,29 +81,45 @@ export function BarcodeScanner({ onBarcodeScanned }: BarcodeScannerProps) {
     try {
       setScanning(true);
       
-      // Request camera permissions explicitly first
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: { ideal: "environment" } // Prefer back camera on mobile
-        } 
-      });
+      // Check if we're on HTTPS or localhost
+      if (window.location.protocol !== 'https:' && !window.location.hostname.includes('localhost')) {
+        throw new Error('Camera requires HTTPS');
+      }
+
+      // Request camera permissions with detailed constraints
+      const constraints = {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      // Stop the test stream after confirming permissions
+      // Stop the test stream immediately
       stream.getTracks().forEach(track => track.stop());
       
-      // Now initialize the scanner with proper mobile settings
+      // Small delay to ensure camera is fully released
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Initialize scanner with mobile-optimized settings
       scannerRef.current = new Html5QrcodeScanner(
         elementId,
         { 
           fps: 10,
           qrbox: { width: 250, height: 250 },
           aspectRatio: 1.0,
-          // Mobile-optimized settings
           showTorchButtonIfSupported: true,
+          // Support all common barcode formats
           formatsToSupport: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
           videoConstraints: {
-            facingMode: { ideal: "environment" } // Use back camera
-          }
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          // Don't show the permission button, we handle it ourselves
+          rememberLastUsedCamera: true
         },
         false
       );
@@ -117,20 +133,28 @@ export function BarcodeScanner({ onBarcodeScanned }: BarcodeScannerProps) {
     } catch (error: any) {
       console.error("Error starting scanner:", error);
       
-      let errorMessage = "Please allow camera access to scan barcodes";
+      let errorMessage = "Unable to access camera";
+      let errorTitle = "Camera Access Failed";
       
       if (error.name === "NotAllowedError") {
-        errorMessage = "Camera permission denied. Please enable camera access in your browser settings.";
+        errorTitle = "Permission Denied";
+        errorMessage = "Please allow camera access in your browser settings and reload the page.";
       } else if (error.name === "NotFoundError") {
-        errorMessage = "No camera found on this device.";
-      } else if (error.name === "NotSupportedError") {
-        errorMessage = "Camera not supported. Please use HTTPS.";
+        errorTitle = "No Camera Found";
+        errorMessage = "No camera device detected on this device.";
+      } else if (error.name === "NotSupportedError" || error.message === 'Camera requires HTTPS') {
+        errorTitle = "HTTPS Required";
+        errorMessage = "Camera access requires a secure connection (HTTPS).";
       } else if (error.name === "NotReadableError") {
-        errorMessage = "Camera is already in use by another application.";
+        errorTitle = "Camera In Use";
+        errorMessage = "Camera is already being used by another application.";
+      } else if (error.name === "OverconstrainedError") {
+        errorTitle = "Camera Constraints Error";
+        errorMessage = "Unable to find a camera that meets the requirements. Try a different device.";
       }
       
       toast({
-        title: "Camera Access Failed",
+        title: errorTitle,
         description: errorMessage,
         variant: "destructive"
       });

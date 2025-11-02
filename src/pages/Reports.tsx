@@ -49,10 +49,11 @@ export default function Reports() {
         .from("sales")
         .select(`
           *,
-          profiles!cashier_id (full_name),
-          sale_items (
+          profiles!sales_cashier_id_fkey (full_name),
+          sale_items!sale_items_sale_id_fkey (
             quantity,
-            medicines (name)
+            medicine_id,
+            medicines!sale_items_medicine_id_fkey (name)
           )
         `)
         .order("created_at", { ascending: false });
