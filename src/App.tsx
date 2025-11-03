@@ -13,6 +13,7 @@ import Purchases from "./pages/Purchases";
 import Reports from "./pages/Reports";
 import Returns from "./pages/Returns";
 import Users from "./pages/Users";
+import UsersManagement from "./pages/UsersManagement";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import SaleComplete from "./pages/SaleComplete";
@@ -47,7 +48,7 @@ const App = () => (
             <Route path="/purchases" element={<Purchases />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/returns" element={<Returns />} />
-            <Route path="/users" element={<Users />} />
+            <Route path="/users" element={<UsersManagement />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/sale-complete" element={<SaleComplete />} />
             <Route path="/purchase-complete" element={<PurchaseComplete />} />

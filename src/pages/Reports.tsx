@@ -50,10 +50,9 @@ export default function Reports() {
         .select(`
           *,
           profiles!sales_cashier_id_fkey (full_name),
-          sale_items!sale_items_sale_id_fkey (
+          sale_items (
             quantity,
-            medicine_id,
-            medicines!sale_items_medicine_id_fkey (name)
+            medicine_id
           )
         `)
         .order("created_at", { ascending: false });
@@ -69,6 +68,26 @@ export default function Reports() {
       const { data, error } = await query;
 
       if (error) throw error;
+      
+      // Fetch medicine names separately for each sale
+      if (data) {
+        for (const sale of data) {
+          if (sale.sale_items) {
+            for (const item of sale.sale_items as any[]) {
+              const { data: medicine } = await supabase
+                .from("medicines")
+                .select("name")
+                .eq("id", item.medicine_id)
+                .single();
+              
+              if (medicine) {
+                (item as any).medicines = medicine;
+              }
+            }
+          }
+        }
+      }
+      
       setReports(data || []);
     } catch (err: any) {
       console.error("Failed to load reports:", err.message);
