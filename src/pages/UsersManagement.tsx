@@ -92,6 +92,31 @@ export default function UsersManagement() {
     fetchCurrentUser()
   }, [])
 
+  const handleUpdateUserRole = async (userId: string, newRole: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const response = await supabase.functions.invoke('update-user-role', {
+        body: {
+          userId,
+          newRole
+        }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast.success(`User role updated to ${newRole}`);
+
+      fetchUsers();
+    } catch (err: any) {
+      console.error("Update role error:", err);
+      toast.error(err.message || "Failed to update user role");
+    }
+  };
+
   const handleDeleteUser = async (userId: string) => {
     if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
       return;
@@ -337,9 +362,26 @@ export default function UsersManagement() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge className={getRoleColor(user.role)}>
-                          {user.role}
-                        </Badge>
+                        {currentUser?.role === 'admin' ? (
+                          <Select 
+                            value={user.role} 
+                            onValueChange={(newRole) => handleUpdateUserRole(user.id, newRole)}
+                          >
+                            <SelectTrigger className="w-32 h-6 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="admin">Admin</SelectItem>
+                              <SelectItem value="manager">Manager</SelectItem>
+                              <SelectItem value="pharmacist">Pharmacist</SelectItem>
+                              <SelectItem value="cashier">Cashier</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge className={getRoleColor(user.role)}>
+                            {user.role}
+                          </Badge>
+                        )}
                         <Badge className={getStatusColor(user.status)}>
                           {user.status}
                         </Badge>
@@ -427,21 +469,38 @@ export default function UsersManagement() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center text-white font-bold text-xl mx-auto mb-3">
-                    {selectedUser.full_name?.split(' ').map((n: string) => n.charAt(0)).join('')}
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center text-white font-bold text-xl mx-auto mb-3">
+                      {selectedUser.full_name?.split(' ').map((n: string) => n.charAt(0)).join('')}
+                    </div>
+                    <h3 className="font-semibold text-lg">{selectedUser.full_name}</h3>
+                    <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
+                    <div className="flex justify-center gap-2 mt-2">
+                      {currentUser?.role === 'admin' ? (
+                        <Select 
+                          value={selectedUser.role} 
+                          onValueChange={(newRole) => handleUpdateUserRole(selectedUser.id, newRole)}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="manager">Manager</SelectItem>
+                            <SelectItem value="pharmacist">Pharmacist</SelectItem>
+                            <SelectItem value="cashier">Cashier</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge className={getRoleColor(selectedUser.role)}>
+                          {selectedUser.role}
+                        </Badge>
+                      )}
+                      <Badge className={getStatusColor(selectedUser.status)}>
+                        {selectedUser.status}
+                      </Badge>
+                    </div>
                   </div>
-                  <h3 className="font-semibold text-lg">{selectedUser.full_name}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
-                  <div className="flex justify-center gap-2 mt-2">
-                    <Badge className={getRoleColor(selectedUser.role)}>
-                      {selectedUser.role}
-                    </Badge>
-                    <Badge className={getStatusColor(selectedUser.status)}>
-                      {selectedUser.status}
-                    </Badge>
-                  </div>
-                </div>
 
                 <div className="space-y-3 text-sm">
                   <div>
